@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consult AI — Test</title>
+<style>
+  body{
+    font-family:-apple-system,'Inter',sans-serif;
+    max-width:640px; margin:0 auto; padding:32px 20px;
+    background:#f6f7f9; color:#1c2024;
+  }
+  h1{font-size:20px; margin-bottom:4px;}
+  .disclaimer{
+    background:#fff4e5; border:1px solid #f0d9a8; color:#7a5c1e;
+    padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:20px;
+  }
+  #status{ font-size:13px; color:#8891a0; margin-bottom:16px; min-height:18px; }
+  #chat-log{
+    background:#fff; border:1px solid #dde1e6; border-radius:10px;
+    padding:16px; min-height:200px; margin-bottom:14px; font-size:14px; line-height:1.6;
+  }
+  .msg{margin-bottom:14px;}
+  .msg-label{font-weight:600; margin-bottom:2px;}
+  .msg-user .msg-label{color:#3a5a7a;}
+  .msg-ai .msg-label{color:#d9694f;}
+  .msg-body{white-space:pre-wrap;}
+  textarea{
+    width:100%; min-height:70px; font-family:inherit; font-size:14px;
+    padding:10px; border:1px solid #dde1e6; border-radius:8px; resize:vertical;
+    box-sizing:border-box;
+  }
+  button{
+    margin-top:8px; background:#1c2024; color:#fff; border:none;
+    padding:10px 18px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  button:disabled{opacity:0.5; cursor:not-allowed;}
+</style>
+</head>
+<body>
+
+<h1>Consult AI — test harness</h1>
+<div class="disclaimer">Consult AI is still in the learning phase and could make mistakes.</div>
+<div id="status">Click "Load Model" to begin (downloads once, then runs offline in your browser).</div>
+
+<button id="loadBtn">Load Model</button>
+
+<div id="chat-log"></div>
+
+<textarea id="userInput" placeholder="Ask something about resumes or the job market." disabled></textarea>
+<button id="sendBtn" disabled>Send</button>
+
+<script type="module">
+  const statusEl = document.getElementById('status');
+  const chatLog = document.getElementById('chat-log');
+  const loadBtn = document.getElementById('loadBtn');
+  const sendBtn = document.getElementById('sendBtn');
+  const userInput = document.getElementById('userInput');
+
+  const SYSTEM_PROMPT = "You are Consult AI, a narrow assistant that ONLY discusses resumes, job applications, interviews, and the job market. Give short, concrete, practical answers grounded in real resume/career advice. Never discuss AI, yourself, technology, or anything unrelated to careers and job seeking. If the question is unrelated to resumes or jobs, respond only with: 'I can only help with resume and job market questions right now.'";
+
+  // Off-topic / concerning keyword guard — small local models can go off-script,
+  // this is a blunt safety net, not a substitute for a bigger model.
+  const RED_FLAG_PATTERNS = /\b(ai system|take over|takeover|kill|weapon|hack|virus|conspiracy)\b/i;
+  const ON_TOPIC_HINTS = /\b(resume|resumé|cv|job|career|interview|skill|experience|hire|hiring|employer|application|cover letter)\b/i;
+
+  // ---- Worker code, built inline so this stays one portable file ----
+  const workerCode = `
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
+
+    let generator = null;
+
+    self.onmessage = async (e) => {
+      const { type, payload } = e.data;
+
+      if (type === 'load') {
+        try {
+          generator = await pipeline('text-generation', 'onnx-community/Llama-3.2-1B-Instruct', {
+            progress_callback: (p) => {
+              self.postMessage({ type: 'progress', payload: p });
+            }
+          });
+          self.postMessage({ type: 'ready' });
+        } catch (err) {
+          self.postMessage({ type: 'load-error', payload: err.message });
+        }
+      }
+
+      if (type === 'generate') {
+        try {
+          const output = await generator(payload.messages, {
+            max_new_tokens: 180,
+            do_sample: false,   // greedy decoding — more predictable, less prone to going off-script
+            repetition_penalty: 1.3
+          });
+          const reply = output[0].generated_text.at(-1).content;
+          self.postMessage({ type: 'result', payload: reply });
+        } catch (err) {
+          self.postMessage({ type: 'gen-error', payload: err.message });
+        }
+      }
+    };
+  `;
+
+  const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+  const worker = new Worker(URL.createObjectURL(workerBlob), { type: 'module' });
+
+  worker.onmessage = (e) => {
+    const { type, payload } = e.data;
+    if (type === 'progress') {
+      if (payload.status === 'progress' && payload.file) {
+        statusEl.textContent = `Downloading ${payload.file}: ${Math.round(payload.progress || 0)}%`;
+      }
+    } else if (type === 'ready') {
+      statusEl.textContent = 'Model ready — ask a question below.';
+      userInput.disabled = false;
+      sendBtn.disabled = false;
+      loadBtn.disabled = true;
+    } else if (type === 'load-error') {
+      statusEl.textContent = 'Failed to load model: ' + payload;
+      loadBtn.disabled = false;
+    } else if (type === 'result') {
+      const clean = filterResponse(payload);
+      updateMessage(currentThinkingId, clean);
+      sendBtn.disabled = false;
+    } else if (type === 'gen-error') {
+      updateMessage(currentThinkingId, 'Error generating a response: ' + payload);
+      sendBtn.disabled = false;
+    }
+  };
+
+  loadBtn.onclick = () => {
+    loadBtn.disabled = true;
+    statusEl.textContent = 'Loading model... this can take a minute or two the first time.';
+    worker.postMessage({ type: 'load' });
+  };
+
+  let currentThinkingId = null;
+
+  sendBtn.onclick = () => {
+    const question = userInput.value.trim();
+    if (!question) return;
+
+    appendMessage('user', question);
+    userInput.value = '';
+    sendBtn.disabled = true;
+    currentThinkingId = appendMessage('ai', 'Thinking...');
+
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: question }
+    ];
+    worker.postMessage({ type: 'generate', payload: { messages } });
+  };
+
+  function filterResponse(text){
+    if (RED_FLAG_PATTERNS.test(text) || !ON_TOPIC_HINTS.test(text)) {
+      return "I wasn't able to generate a reliable answer to that — could you rephrase your question so it's specifically about resumes or the job market?";
+    }
+    return text;
+  }
+
+  let msgCounter = 0;
+  function appendMessage(role, text){
+    msgCounter++;
+    const id = 'msg-' + msgCounter;
+    const div = document.createElement('div');
+    div.className = 'msg msg-' + role;
+    div.id = id;
+    div.innerHTML = `<div class="msg-label">${role === 'user' ? 'You' : 'Consult AI'}</div><div class="msg-body">${escapeHtml(text)}</div>`;
+    chatLog.appendChild(div);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return id;
+  }
+  function updateMessage(id, text){
+    document.getElementById(id).querySelector('.msg-body').textContent = text;
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+  function escapeHtml(str){
+    const d = document.createElement('div');
+    d.innerText = str;
+    return d.innerHTML;
+  }
+</script>
+</body>
+</html>
