@@ -273,17 +273,17 @@
         <div class="home-card-desc">Pick a template and fill in your details from scratch.</div>
         <span class="home-card-tag">Available</span>
       </div>
-      <div class="home-card disabled">
+      <div class="home-card enabled" onclick="showScreen('screen-enhance')">
         <div class="home-card-icon">↥</div>
         <div class="home-card-title">Enhance an existing resume</div>
-        <div class="home-card-desc">Upload an existing resume and get improvement suggestions.</div>
-        <span class="home-card-tag">Coming soon</span>
+        <div class="home-card-desc">Paste an existing resume and get improvement suggestions.</div>
+        <span class="home-card-tag">Available</span>
       </div>
-      <div class="home-card disabled">
+      <div class="home-card enabled" onclick="showScreen('screen-consult')">
         <div class="home-card-icon">✦</div>
         <div class="home-card-title">Consult AI</div>
         <div class="home-card-desc">Ask questions about your resume, job search, or the market.</div>
-        <span class="home-card-tag">Coming soon</span>
+        <span class="home-card-tag">Available</span>
       </div>
     </div>
     <button class="back-link" style="margin-top:22px;" onclick="clearSavedData()">Clear saved progress & start fresh</button>
@@ -300,6 +300,63 @@
     <button class="back-link" onclick="showScreen('screen-home')">← Back</button>
   </div>
   <div class="gallery-grid" id="galleryGrid"></div>
+</div>
+
+<!-- ============================================================ ENHANCE SCREEN -->
+<div class="screen" id="screen-enhance">
+  <div class="gallery-header">
+    <div>
+      <h1>Enhance an existing resume</h1>
+      <p>Paste your current resume text below. Use section headers (Experience, Education, Skills, etc.) for best results.</p>
+    </div>
+    <button class="back-link" onclick="showScreen('screen-home')">← Back</button>
+  </div>
+  <div style="max-width:700px; margin:0 auto; padding:32px 32px 60px;">
+    <textarea id="enhance-input" placeholder="Paste your resume text here, e.g.:
+
+EXPERIENCE
+Software Engineering Intern, Acme Corp
+Was responsible for helping the team with testing
+Reduced load time by 20%
+
+EDUCATION
+University of Washington, B.S. Computer Engineering, 2027–2031
+
+SKILLS
+Python, C++, Git" style="width:100%; min-height:280px; font-family:'Inter',sans-serif; font-size:13.5px; line-height:1.5; padding:14px; border:1px solid var(--line); border-radius:var(--radius); background:var(--panel); resize:vertical;"></textarea>
+
+    <button class="btn-primary" style="margin-top:14px; width:100%;" onclick="runEnhanceAnalysis()">Analyze</button>
+
+    <div id="enhance-feedback" style="margin-top:24px; display:none;">
+      <div class="group-label" style="margin-bottom:10px;">Quick feedback</div>
+      <div id="enhance-feedback-list" style="font-size:13px; color:var(--slate); line-height:1.6;"></div>
+      <button class="btn-primary" style="margin-top:18px; width:100%; background:var(--accent);" onclick="continueToTemplatesFromEnhance()">Continue — pick a template →</button>
+      <p style="font-size:12px; color:var(--slate-light); margin-top:10px; text-align:center;">
+        This is a rough first pass, not perfect parsing — you'll be able to fix and rearrange everything on the next screen.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CONSULT AI SCREEN -->
+<div class="screen" id="screen-consult">
+  <div class="gallery-header">
+    <div>
+      <h1>Consult AI</h1>
+      <p>Ask a specific question about resumes, formatting, or the job search process.</p>
+    </div>
+    <button class="back-link" onclick="showScreen('screen-home')">← Back</button>
+  </div>
+  <div style="max-width:640px; margin:0 auto; padding:24px 32px 60px;">
+    <div class="disclaimer-box" style="background:#fff4e5; border:1px solid #f0d9a8; color:#7a5c1e; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:18px;">
+      Consult AI is still in the learning phase and could make mistakes.
+    </div>
+
+    <div id="consult-log" style="background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:16px; min-height:180px; margin-bottom:14px; font-size:14px; line-height:1.6;"></div>
+
+    <textarea id="consult-input" placeholder="e.g. How long should my resume be?" style="width:100%; min-height:60px; font-family:'Inter',sans-serif; font-size:14px; padding:10px; border:1px solid var(--line); border-radius:8px; resize:vertical; box-sizing:border-box;"></textarea>
+    <button class="btn-primary" style="margin-top:10px; width:100%;" id="consult-send-btn" onclick="sendConsultQuestion()">Ask</button>
+  </div>
 </div>
 
 <!-- ============================================================ FORM SCREEN -->
@@ -408,6 +465,52 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0,0);
+}
+
+/* ============================================================ CONSULT AI (calls the live Render server) */
+const CONSULT_API_URL = 'https://opening-round-server.onrender.com/ask';
+
+function consultAppendMessage(role, text){
+  const log = document.getElementById('consult-log');
+  const div = document.createElement('div');
+  div.style.marginBottom = '14px';
+  div.innerHTML = role === 'user'
+    ? `<div style="font-weight:600; color:var(--accent); margin-bottom:2px;">You</div><div>${escConsult(text)}</div>`
+    : `<div style="font-weight:600; color:#d9694f; margin-bottom:2px;">Consult AI</div><div style="white-space:pre-wrap;">${escConsult(text)}</div>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+function escConsult(str){
+  const d = document.createElement('div');
+  d.innerText = str;
+  return d.innerHTML;
+}
+
+async function sendConsultQuestion(){
+  const input = document.getElementById('consult-input');
+  const btn = document.getElementById('consult-send-btn');
+  const question = input.value.trim();
+  if(!question) return;
+
+  consultAppendMessage('user', question);
+  input.value = '';
+  btn.disabled = true;
+  const thinkingDiv = consultAppendMessage('ai', 'Thinking... (the server may take up to a minute to wake up if it has been idle)');
+
+  try{
+    const res = await fetch(CONSULT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const data = await res.json();
+    thinkingDiv.querySelector('div:last-child').textContent = data.answer;
+  }catch(err){
+    thinkingDiv.querySelector('div:last-child').textContent = 'Something went wrong reaching the server. Please try again in a moment.';
+    console.error(err);
+  }
+  btn.disabled = false;
 }
 
 /* ============================================================ TEMPLATE DEFINITIONS */
@@ -818,6 +921,112 @@ function loadFromStorage(){
     return true;
   }catch(e){ console.warn('Could not load saved data:', e); return false; }
 }
+
+/* ============================================================ ENHANCE FLOW (lightweight, no API, rule-based) */
+const SECTION_KEYWORDS = {
+  experience: ['experience','work experience','employment','professional experience'],
+  education: ['education'],
+  projects: ['projects','project'],
+  certifications: ['certifications','certificates','certification'],
+  leadership: ['leadership','activities','leadership & activities','extracurricular','leadership and activities'],
+  skills: ['skills','technical skills'],
+  summary: ['summary','objective','profile']
+};
+
+function matchSectionHeader(line){
+  const lower = line.toLowerCase().replace(/[:•\-–—]/g,'').trim();
+  for(const key in SECTION_KEYWORDS){
+    if(SECTION_KEYWORDS[key].some(kw => lower === kw)) return key;
+  }
+  return null;
+}
+
+function quickBulletCheck(line){
+  const issues = [];
+  if(/^(was|were|responsible for|helped|assisted|worked on|involved in)/i.test(line.trim())){
+    issues.push('weak/passive phrasing');
+  }
+  if(!/\d/.test(line)){
+    issues.push('no number or metric');
+  }
+  return issues;
+}
+
+function parseResumeText(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const buckets = {experience:[], education:[], projects:[], certifications:[], leadership:[], skills:[], summary:[]};
+  let current = null;
+
+  lines.forEach(line=>{
+    const sec = matchSectionHeader(line);
+    if(sec){ current = sec; return; }
+    if(current) buckets[current].push(line);
+  });
+
+  const data = {
+    name:'', email:'', phone:'', location:'', link:'',
+    summary: buckets.summary.join(' '),
+    skills: buckets.skills.join(', '),
+    template: 'classic',
+    experience: [], education: [], projects: [], certifications: [], leadership: [], custom: []
+  };
+
+  if(buckets.experience.length){
+    data.experience.push({ title:'(edit: job title)', company:'(edit: company)', location:'', dates:'', bullets: buckets.experience });
+  }
+  if(buckets.education.length){
+    data.education.push({ school: buckets.education[0] || '', degree: buckets.education.slice(1).join(' ') || '', dates:'' });
+  }
+  if(buckets.projects.length){
+    data.projects.push({ name:'(edit: project name)', desc: buckets.projects.join(' ') });
+  }
+  buckets.certifications.forEach(c=>{
+    data.certifications.push({ name: c, date:'' });
+  });
+  if(buckets.leadership.length){
+    data.leadership.push({ role:'(edit: role/activity)', dates:'', desc: buckets.leadership.join(' ') });
+  }
+
+  return data;
+}
+
+let enhanceParsedData = null;
+
+function runEnhanceAnalysis(){
+  const text = document.getElementById('enhance-input').value;
+  if(!text.trim()){ return; }
+  enhanceParsedData = parseResumeText(text);
+
+  const allBullets = [
+    ...(enhanceParsedData.experience[0] ? enhanceParsedData.experience[0].bullets : []),
+    ...(enhanceParsedData.leadership[0] ? [enhanceParsedData.leadership[0].desc] : [])
+  ];
+
+  const feedbackList = document.getElementById('enhance-feedback-list');
+  if(allBullets.length === 0){
+    feedbackList.innerHTML = '<div class="r-empty-hint">No bullet lines detected under Experience — make sure to use a header like "Experience" above your lines.</div>';
+  } else {
+    feedbackList.innerHTML = allBullets.map(b=>{
+      const issues = quickBulletCheck(b);
+      const color = issues.length ? 'var(--danger)' : '#2f8a5c';
+      const issueText = issues.length ? issues.join(', ') : 'looks solid';
+      return `<div style="margin-bottom:8px; padding:8px 10px; background:var(--panel); border-radius:6px;">
+        <div style="font-weight:500; color:var(--ink);">${esc(b)}</div>
+        <div style="font-size:11.5px; color:${color}; margin-top:3px;">${issueText}</div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('enhance-feedback').style.display = 'block';
+}
+
+function continueToTemplatesFromEnhance(){
+  if(!enhanceParsedData) return;
+  rebuildFromData(enhanceParsedData);
+  saveToStorage();
+  showScreen('screen-templates');
+}
+
 
 function clearSavedData(){
   if(confirm('This will erase your saved resume data on this device. Continue?')){
