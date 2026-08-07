@@ -80,8 +80,8 @@
   .home-card.disabled .home-card-tag{background:var(--line); color:var(--slate-light);}
 
   /* ============================================================ TEMPLATE GALLERY */
-  .gallery-header{padding-left:190px;
-    padding:32px 40px 20px; border-bottom:1px solid var(--line); background:var(--paper);
+  .gallery-header{
+    padding:32px 40px 20px 190px; border-bottom:1px solid var(--line); background:var(--paper);
     display:flex; align-items:center; justify-content:space-between;
   }
   .gallery-header h1{font-family:'Source Serif 4',serif; font-size:24px; margin:0 0 4px;}
@@ -273,15 +273,15 @@
         <div class="home-card-desc">Pick a template and fill in your details from scratch.</div>
         <span class="home-card-tag">Available</span>
       </div>
-      <div class="home-card enabled" onclick="showScreen('screen-enhance')">
+      <div class="home-card disabled">
         <div class="home-card-icon">↥</div>
         <div class="home-card-title">Enhance an existing resume</div>
         <div class="home-card-desc">Paste an existing resume and get improvement suggestions.</div>
-        <span class="home-card-tag">Available</span>
+        <span class="home-card-tag">Coming soon</span>
       </div>
       <div class="home-card enabled" onclick="showScreen('screen-consult')">
         <div class="home-card-icon">✦</div>
-        <div class="home-card-title">Consult AI</div>
+        <div class="home-card-title" id="consult-title-home">Consult AI</div>
         <div class="home-card-desc">Ask questions about your resume, job search, or the market.</div>
         <span class="home-card-tag">Available</span>
       </div>
@@ -342,7 +342,7 @@ Python, C++, Git" style="width:100%; min-height:280px; font-family:'Inter',sans-
 <div class="screen" id="screen-consult">
   <div class="gallery-header">
     <div>
-      <h1>Consult AI</h1>
+      <h1 id="consult-title-screen">Consult AI</h1>
       <p>Ask a specific question about resumes, formatting, or the job search process.</p>
     </div>
     <button class="back-link" onclick="showScreen('screen-home')">← Back</button>
@@ -469,6 +469,15 @@ function showScreen(id){
 
 /* ============================================================ CONSULT AI (calls the live Render server) */
 const CONSULT_API_URL = 'https://opening-round-server.onrender.com/ask';
+const CONSULT_VERSION = 'v1.0'; // bump this as the knowledge base improves
+
+function applyConsultVersion(){
+  const label = 'Consult AI ' + CONSULT_VERSION;
+  const homeEl = document.getElementById('consult-title-home');
+  const screenEl = document.getElementById('consult-title-screen');
+  if(homeEl) homeEl.textContent = label;
+  if(screenEl) screenEl.textContent = label;
+}
 
 function consultAppendMessage(role, text){
   const log = document.getElementById('consult-log');
@@ -476,7 +485,7 @@ function consultAppendMessage(role, text){
   div.style.marginBottom = '14px';
   div.innerHTML = role === 'user'
     ? `<div style="font-weight:600; color:var(--accent); margin-bottom:2px;">You</div><div>${escConsult(text)}</div>`
-    : `<div style="font-weight:600; color:#d9694f; margin-bottom:2px;">Consult AI</div><div style="white-space:pre-wrap;">${escConsult(text)}</div>`;
+    : `<div style="font-weight:600; color:#d9694f; margin-bottom:2px;">Consult AI ${CONSULT_VERSION}</div><div style="white-space:pre-wrap;">${escConsult(text)}</div>`;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
   return div;
@@ -1218,6 +1227,7 @@ function setPaperEditable(on){
 
 /* ============================================================ INIT */
 renderGallery();
+applyConsultVersion();
 const restored = loadFromStorage();
 if(!restored){
   addExperience();
